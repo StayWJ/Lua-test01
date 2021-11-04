@@ -1,7 +1,7 @@
 local t = {
     a = {
         a1 = 1,
-        a1 = 2,
+        a2 = 2,
     },
     b = 2,
     c = {
@@ -26,6 +26,10 @@ local function doDeepCopy(source)
         end
         
         local result = {}
+        -- 保存已查找到的表
+        -- 这里如果放到迭代后，在环的拷贝下会导致栈溢出
+        copyTabArr[temp] = result
+
         -- 2、可能有元表
         local tMeta = getmetatable(temp)
         -- 拷贝元表
@@ -38,8 +42,6 @@ local function doDeepCopy(source)
             result[k] = _doCopy(v)
         end
 
-        -- 保存已拷贝的表
-        copyTabArr[temp] = result
         return result
     end
     return _doCopy(source)
