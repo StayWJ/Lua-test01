@@ -12,6 +12,8 @@ local t = {
     },
 }
 
+--- 深拷贝
+--- @param source '源数据'
 local function doDeepCopy(source)
     local copyTabArr = {}
     local function _doCopy(temp)
