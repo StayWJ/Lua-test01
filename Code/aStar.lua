@@ -2,7 +2,6 @@
 math.randomseed(tostring(os.time()):sub(-6):reverse())
 --- 地图尺寸
 local MAP_SIZE = 50
-local count = MAP_SIZE * MAP_SIZE
 --- 起点坐标
 local START_POS = {x = 1, y = 1}
 --- 终点坐标
@@ -11,7 +10,7 @@ local START_TAG, END_TAG,ROAD_TAG, WALL_TAG = '*', '!', '+', '-'
 local map = {}
 
 --- 生成地图
-local function setMap(tMap)
+local function initMap(tMap)
     for i = 1, MAP_SIZE do
         tMap[i] = {}
         for j = 1, MAP_SIZE do
@@ -37,14 +36,19 @@ local function showMap(tMap)
     end
 end
 
+--- 获取两点间的距离
+local function getDistance(pos1, pos2)
+    return math.abs(pos1.x - pos2.x) + math.abs(pos1.y - pos2.y)
+end
+
 --- 获取当前节点的估值
 --- @param pos '坐标'
---- @return number, number '起点估值', '终点估值'
+--- @return number, number, number '起点估值', '终点估值', '总估值'
 local function getPathVal(pos, curPos)
     local curVal = curPos.startVal and curPos.startVal or 0
-    local startVal = math.abs(pos.x - curPos.x) + math.abs(pos.y - curPos.y) + curVal
-    local endVal = math.abs(END_POS.x - pos.x) + math.abs(END_POS.y - pos.y)
-    return startVal, endVal
+    local startVal = getDistance(pos, curPos) + curVal
+    local endVal = getDistance(pos, END_POS)
+    return startVal, endVal, startVal + endVal
 end
 
 --- 二分查找列表
@@ -92,7 +96,8 @@ local function insert(list, val)
         table.insert(list, val)
         return
     end
-    -- 遍历找到第一个大于val的位置
+    -- 遍历找到第一个大于等于val的位置
+    -- 不包括等于的话，相同权重的情况下，越早入表的在越前面
     for i, v in ipairs(list) do
         if v.totalVal >= val.totalVal then
             table.insert(list, i, val)
@@ -100,6 +105,27 @@ local function insert(list, val)
         end
     end
     --]]
+end
+
+--- 判断一个点是否是终点
+local function isEnd(node)
+    return node.x == END_POS.x and node.y == END_POS.y
+end
+
+--- 返回一个点的临近点
+local function getNeighbours(pos)
+    local list = {}
+    for i, x in ipairs({pos.x + 1, pos.x - 1}) do
+        if x > 0 and x <= MAP_SIZE then
+            table.insert(list, { x = x, y = pos.y })
+        end
+    end
+    for j, y in ipairs({pos.y - 1, pos.y + 1}) do
+        if y > 0 and y <= MAP_SIZE then
+            table.insert(list, { x = pos.x, y = y })
+        end
+    end
+    return list
 end
 
 --- 搜索终点路径
@@ -111,7 +137,7 @@ local function searchPath(tMap)
     insert(openList, curNode)
 
     -- 当前节点不是终点 且 待检查列表不为空
-    while curNode.tag ~= END_TAG and #openList ~= 0 do
+    while not isEnd(curNode) and #openList ~= 0 do
         --print('--访问开始', curNode.x, curNode.y)
         -- 设置当前节点访问状态
         curNode.isVisit = true
@@ -121,49 +147,34 @@ local function searchPath(tMap)
         local function doCheck(node)
             -- 是墙，不可达
             if node.tag == WALL_TAG then return end
+            -- 访问过，直接结束
+            if node.isVisit then return end
+
             -- 设置估值
-            local startVal, endVal = getPathVal(node, curNode)
-            local totalVal = startVal + endVal
-            local function setVal()
+            local startVal, endVal, totalVal = getPathVal(node, curNode)
+            -- 原本无路径，或原路径代价更高
+            if node.totalVal == nil or node.totalVal > totalVal then
                 node.totalVal = totalVal
                 node.startVal = startVal
                 node.endVal = endVal
                 -- 设置当前节点为他的父节点
                 node.parent = curNode
             end
-            -- 原本无路径，或原路径代价更高
-            if node.totalVal == nil or node.totalVal > totalVal then
-                setVal()
+
+            -- 不在列表中，加入待检查列表
+            if node.isOpen ~= true then
+                insert(openList, node)
             end
-            -- 加入待检查列表
-            insert(openList, node)
+
             --print('----入栈了', node.x, node.y, node.totalVal)
             node.isOpen = true
         end
         
         -- 遍历邻近可达节点
         local function doVisit()
-            local checkList = {}
-            for i, x in ipairs({curNode.x + 1, curNode.x - 1}) do
-                if x > 0 and x <= MAP_SIZE then
-                    local node = tMap[x][curNode.y]
-                    -- 未进入检查列表 且 未访问 进入检查列表
-                    if not node.isOpen and not node.isVisit then
-                        table.insert(checkList, tMap[x][curNode.y])
-                    end
-                end
-            end
-            for j, y in ipairs({curNode.y - 1, curNode.y + 1}) do
-                if y > 0 and y <= MAP_SIZE then
-                    local node = tMap[curNode.x][y]
-                    -- 未进入检查列表 且 未访问 进入检查列表
-                    if not node.isOpen and not node.isVisit then
-                        table.insert(checkList, tMap[curNode.x][y])
-                    end
-                end
-            end
-            for i, node in ipairs(checkList) do
-                count = count - 1
+            local checkList = getNeighbours(curNode)
+            for i, pos in ipairs(checkList) do
+                local node = tMap[pos.x][pos.y]
                 doCheck(node)
             end
         end
@@ -191,7 +202,6 @@ local function searchPath(tMap)
     end
 end
 
-setMap(map)
+initMap(map)
 showMap(map)
 searchPath(map)
-print(count)
