@@ -6,24 +6,30 @@ local MAP_SIZE = 50
 local START_POS = {x = 1, y = 1}
 --- 终点坐标
 local END_POS = {x = MAP_SIZE, y = MAP_SIZE}
-local START_TAG, END_TAG,ROAD_TAG, WALL_TAG = '*', '!', '+', '-'
-local map = {}
+--- 是否开启全方向
+local IS_ALL_DIRECTIONS = true
+--- 路的权重 1——10
+local ROAD_WEIGHT = 1.1
+-- 各标记符号
+local START_TAG, END_TAG,ROAD_TAG, WALL_TAG, PATH_TAG = '*', '!', '+', '-', '●'
 
---- 生成地图
-local function initMap(tMap)
+--- 获取一个随机生成的地图
+local function getMap()
+    local map = {}
     for i = 1, MAP_SIZE do
-        tMap[i] = {}
+        map[i] = {}
         for j = 1, MAP_SIZE do
-            tMap[i][j] = {
+            map[i][j] = {
                 x = i,
                 y = j,
-                tag = math.random(10) < math.random(10) * 2 and ROAD_TAG or WALL_TAG,
+                tag = math.random(10) <= math.random(10) * ROAD_WEIGHT and ROAD_TAG or WALL_TAG,
             }
         end
     end
     -- 设置终点和起点的标记
-    tMap[START_POS.x][START_POS.y].tag = START_TAG
-    tMap[END_POS.x][END_POS.y].tag = END_TAG
+    map[START_POS.x][START_POS.y].tag = START_TAG
+    map[END_POS.x][END_POS.y].tag = END_TAG
+    return map
 end
 
 --- 显示地图
@@ -38,7 +44,14 @@ end
 
 --- 获取两点间的距离
 local function getDistance(pos1, pos2)
-    return math.abs(pos1.x - pos2.x) + math.abs(pos1.y - pos2.y)
+    local deltaX = math.abs(pos1.x - pos2.x)
+    local deltaY = math.abs(pos1.y - pos2.y)
+    local dis = deltaX + deltaY
+    if deltaX * deltaY == 0 then
+        return dis
+    else
+        return math.sqrt(deltaX * deltaX + deltaY * deltaY)
+    end
 end
 
 --- 获取当前节点的估值
@@ -52,15 +65,15 @@ local function getPathVal(pos, curPos)
 end
 
 --- 二分查找列表
-local function findFirstMaxIndex(list, val)
+local function findFirstMaxOrEqual(list, val)
     -- 列表为空
     if #list == 0 then return nil end
     -- 检查表头和表尾
     if list[1].totalVal > val.totalVal then return 1 end
     local size = #list
     if list[size].totalVal < val.totalVal then return nil end
-    -- min 一定是小于等于查找值的索引
-    -- max 一定是大于查找值的索引
+    -- min 一定是小于查找值的索引
+    -- max 一定是大于等于查找值的索引
     local minIndex, maxIndex = 1, size
     -- 查找
     while maxIndex - minIndex > 1 do
@@ -82,7 +95,7 @@ local function insert(list, val)
     end
     ----[[
     ---- 遍历找到第一个大于val的位置
-    local pos = findFirstMaxIndex(list, val)
+    local pos = findFirstMaxOrEqual(list, val)
     if pos then
         table.insert(list, pos, val)
     else
@@ -115,16 +128,28 @@ end
 --- 返回一个点的临近点
 local function getNeighbours(pos)
     local list = {}
-    for i, x in ipairs({pos.x + 1, pos.x - 1}) do
-        if x > 0 and x <= MAP_SIZE then
-            table.insert(list, { x = x, y = pos.y })
+    local tempList = {
+        {x = pos.x, y = pos.y + 1},
+        {x = pos.x + 1, y = pos.y},
+        {x = pos.x - 1, y = pos.y},
+        {x = pos.x, y = pos.y - 1},
+    }
+    if IS_ALL_DIRECTIONS then
+        table.insert(tempList, {x = pos.x + 1, y = pos.y + 1})
+        table.insert(tempList, {x = pos.x - 1, y = pos.y + 1})
+        table.insert(tempList, {x = pos.x + 1, y = pos.y - 1})
+        table.insert(tempList, {x = pos.x - 1, y = pos.y - 1})
+    end
+    -- 方向组范围判断
+    for i, v in ipairs(tempList) do
+        if v.x > 0 and v.x <= MAP_SIZE and v.y > 0 and v.y <= MAP_SIZE then
+            table.insert(list, { x = v.x, y = v.y })
         end
     end
-    for j, y in ipairs({pos.y - 1, pos.y + 1}) do
-        if y > 0 and y <= MAP_SIZE then
-            table.insert(list, { x = pos.x, y = y })
-        end
-    end
+    -- 根据终点距离排序
+    table.sort(list, function(a, b)
+        return getDistance(a, END_POS) < getDistance(b, END_POS)
+    end)
     return list
 end
 
@@ -136,64 +161,57 @@ local function searchPath(tMap)
     -- 插入起点
     insert(openList, curNode)
 
+    --- 检查节点状态
+    local function doCheck(node)
+        -- 是墙，不可达
+        if node.tag == WALL_TAG then return end
+        -- 访问过，直接结束
+        if node.isVisit then return end
+
+        -- 设置估值
+        local startVal, endVal, totalVal = getPathVal(node, curNode)
+        -- 原本无路径，或原路径代价更高
+        if node.totalVal == nil or node.totalVal > totalVal then
+            node.totalVal = totalVal
+            node.startVal = startVal
+            node.endVal = endVal
+            -- 设置当前节点为他的父节点
+            node.parent = curNode
+        end
+
+        -- 不在列表中，加入待检查列表
+        if node.isOpen ~= true then
+            insert(openList, node)
+            node.isOpen = true
+        end
+    end
+
     -- 当前节点不是终点 且 待检查列表不为空
     while not isEnd(curNode) and #openList ~= 0 do
-        --print('--访问开始', curNode.x, curNode.y)
         -- 设置当前节点访问状态
         curNode.isVisit = true
         -- 移除当前节点
         table.remove(openList, 1)
-        -- 检查节点状态
-        local function doCheck(node)
-            -- 是墙，不可达
-            if node.tag == WALL_TAG then return end
-            -- 访问过，直接结束
-            if node.isVisit then return end
-
-            -- 设置估值
-            local startVal, endVal, totalVal = getPathVal(node, curNode)
-            -- 原本无路径，或原路径代价更高
-            if node.totalVal == nil or node.totalVal > totalVal then
-                node.totalVal = totalVal
-                node.startVal = startVal
-                node.endVal = endVal
-                -- 设置当前节点为他的父节点
-                node.parent = curNode
-            end
-
-            -- 不在列表中，加入待检查列表
-            if node.isOpen ~= true then
-                insert(openList, node)
-            end
-
-            --print('----入栈了', node.x, node.y, node.totalVal)
-            node.isOpen = true
-        end
-        
-        -- 遍历邻近可达节点
-        local function doVisit()
-            local checkList = getNeighbours(curNode)
-            for i, pos in ipairs(checkList) do
-                local node = tMap[pos.x][pos.y]
-                doCheck(node)
-            end
-        end
 
         -- 遍历检查
-        doVisit()
-        --print('--访问结束', curNode.x, curNode.y)
-        --print('------')
+        local checkList = getNeighbours(curNode)
+        for i, pos in ipairs(checkList) do
+            local node = tMap[pos.x][pos.y]
+            doCheck(node)
+        end
+
         -- 没有待检查节点了，找不到路径
         if #openList == 0 then break end
         -- 重新设置当前节点
         curNode = openList[1]
     end
 
-    if curNode.tag == END_TAG then
+    -- 终点检查
+    if isEnd(curNode) then
         print('找到了')
         local p = curNode
         while p do
-            p.tag = '●'
+            p.tag = PATH_TAG
             p = p.parent
         end
         showMap(tMap)
@@ -202,6 +220,6 @@ local function searchPath(tMap)
     end
 end
 
-initMap(map)
+local map = getMap()
 showMap(map)
 searchPath(map)
