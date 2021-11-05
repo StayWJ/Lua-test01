@@ -1,3 +1,7 @@
+---------------------------------------
+-- 排序
+---------------------------------------
+
 local data = {
     {age = 1, name = "aa", stage = 2},
     {age = 1, name = "bb", stage = 3},
@@ -11,9 +15,13 @@ local data = {
 -- 比较函数
 local function comp(a, b)
     -- 当 age 不相等时，返回 age 对比值
-    if a.age ~= b.age then return a.age < b.age end
+    if a.age ~= b.age then
+        return a.age < b.age
+    end
     -- 当 age 相等且 stage 不相等时，返回 stage 对比值
-    if a.stage ~= b.stage then return a.stage < b.stage end
+    if a.stage ~= b.stage then
+        return a.stage < b.stage
+    end
     -- 当 age 和 stage 都相等时，返回 name 对比值
     return a.name < b.name
 

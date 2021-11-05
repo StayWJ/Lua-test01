@@ -1,3 +1,7 @@
+---------------------------------------
+-- 怪兽生成器
+---------------------------------------
+
 --- 怪兽生成器
 local MonsterGenerator = {}
 MonsterGenerator.__index = MonsterGenerator
